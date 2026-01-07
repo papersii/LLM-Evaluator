@@ -1,4 +1,5 @@
 import json
+import asyncio
 import argparse
 import matplotlib.pyplot as plt
 from datetime import datetime
@@ -63,7 +64,7 @@ def visualize_results(results, detailed_data, save_path=None):
     else:
         plt.show()
 
-def main():
+async def main():
     parser = argparse.ArgumentParser(description="LLM Evaluation Pipeline")
     parser.add_argument("--data_path", type=str, default="data/test_cases.jsonl")
     parser.add_argument("--visualize", action="store_true", 
@@ -77,20 +78,39 @@ def main():
     detailed_data = []
 
     print(f"Loading data from {args.data_path}...")
+    
+    # Read all data first
+    items = []
     with open(args.data_path, 'r', encoding='utf-8') as f:
         for line in f:
-            # Skip empty lines
             if not line.strip():
                 continue
-            item = json.loads(line)
+            items.append(json.loads(line))
             
+    # Semaphore for rate limiting (e.g., 20 concurrent requests)
+    # 1000 requests/minute = ~16.6 requests/second. 
+    # With generic network latency, 20-50 concurrent tasks is a safe starting point.
+    sem = asyncio.Semaphore(20)
+
+    async def evaluate_item(item):
+        async with sem:
             print(f"Evaluating ID {item['id']}...")
-            response = client.get_response(item['question'])
+            response = await client.get_response(item['question'])
             
             # Score the response
             is_correct = exact_match_scorer(response, item['answer'])
-            results.append(is_correct)
-            detailed_data.append(item)
+            return is_correct, item
+
+    print(f"Starting concurrent evaluation of {len(items)} items...")
+    tasks = [evaluate_item(item) for item in items]
+    
+    # Run all tasks
+    evaluation_results = await asyncio.gather(*tasks)
+    
+    # Unpack results
+    for is_correct, item in evaluation_results:
+        results.append(is_correct)
+        detailed_data.append(item)
 
     # Calculate accuracy
     accuracy = sum(results) / len(results) if results else 0
@@ -104,4 +124,4 @@ def main():
         visualize_results(results, detailed_data, args.save_viz)
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

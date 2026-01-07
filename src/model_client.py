@@ -2,8 +2,10 @@ import os
 import re
 import time
 import json
+import asyncio
 from dotenv import load_dotenv
-from openai import OpenAI
+from openai import AsyncOpenAI
+from dotenv import load_dotenv
 
 load_dotenv()
 
@@ -20,18 +22,18 @@ class LLMClient:
         if not self.api_token:
             raise ValueError("Error: Please configure HF_TOKEN in .env file")
             
-        self.client = OpenAI(
+        self.client = AsyncOpenAI(
             base_url=self.base_url,
             api_key=self.api_token
         )
 
-    def get_response(self, prompt, max_retries=3):
+    async def get_response(self, prompt, max_retries=3):
         """
         Core inference function with retry mechanism and parameter control.
         """
         for i in range(max_retries):
             try:
-                completion = self.client.chat.completions.create(
+                completion = await self.client.chat.completions.create(
                     model=self.model_name,
                     messages=[
                         {"role": "system", "content": "You are a precise assistant for academic evaluation. Provide the final answer clearly."},
@@ -43,7 +45,7 @@ class LLMClient:
                 return completion.choices[0].message.content
             except Exception as e:
                 print(f"Attempt {i+1} failed: {e}")
-                time.sleep(2)  # Wait on rate limiting or network issues
+                await asyncio.sleep(2)  # Wait on rate limiting or network issues
         return None
 
     def extract_final_answer(self, text):
