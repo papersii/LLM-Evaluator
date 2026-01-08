@@ -28,6 +28,7 @@ LLM-Evaluator is a modular evaluation pipeline designed for testing Large Langua
 - 🌐 **Hugging Face Router Support**: Compatible with various LLM providers
 - ⚙️ **Environment-based Configuration**: Secure API key management via `.env`
 - 🧪 **Reproducible Results**: Zero temperature for deterministic evaluation
+- 📈 **Interactive Dashboard**: Streamlit interface for result visualization and analysis
 
 ### 🚀 Quick Start
 
@@ -91,9 +92,22 @@ python main.py --save-viz evaluation_results.png
 
 ![Visualization Example](/Users/papersiii/.gemini/antigravity/brain/c979daa4-a75f-470d-8e3f-9993c807669d/evaluation_results.png)
 
-The visualization includes:
 - **Pie Chart**: Overall accuracy distribution (correct vs incorrect)
 - **Bar Chart**: Per-question results (green = correct, red = incorrect)
+
+#### 6. Interactive Dashboard
+
+Launch the web interface for an easier evaluation experience:
+
+```bash
+streamlit run app.py
+```
+
+**Features:**
+- 📁 **File Upload**: Drag and drop your JSONL datasets
+- ⚡ **Async Evaluation**: Concurrent processing with rate limiting
+- 🕸️ **Radar Chart**: Visual analysis of model performance across categories
+- 📊 **Detailed Metrics**: View accuracy trends and specific failure cases
 
 ### 📁 Project Structure
 
@@ -207,6 +221,7 @@ LLM-Evaluator 是一个轻量级、模块化的大语言模型评测框架，专
 - 🌐 **Hugging Face Router 支持**：兼容多种 LLM 提供商
 - ⚙️ **环境变量配置**：通过 `.env` 安全管理 API 密钥
 - 🧪 **可复现结果**：零温度参数确保评测结果一致
+- 📈 **交互式仪表板**：基于 Streamlit 的可视化评测与分析界面
 
 ### 🚀 快速开始
 
@@ -253,6 +268,21 @@ DEFAULT_MODEL=deepseek-ai/DeepSeek-V3.2:novita
 # 或直接使用 Python
 python main.py --data_path data/test_cases.jsonl
 ```
+
+#### 5. 启动交互式仪表板
+
+使用 Web 界面进行更直观的评测：
+
+```bash
+streamlit run app.py
+```
+
+**功能特性：**
+- 📁 **文件上传**：直接拖拽 JSONL 数据集
+- ⚡ **异步评测**：支持并发处理与自动限流
+- 🕸️ **雷达图分析**：多维度展示模型能力
+- 📊 **详细指标**：实时查看准确率与具体错误用例
+
 
 ### 📁 项目结构
 
