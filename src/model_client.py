@@ -17,7 +17,7 @@ class LLMClient:
     def __init__(self):
         self.api_token = os.getenv("HF_TOKEN")
         self.base_url = os.getenv("HF_API_BASE", "https://router.huggingface.co/v1")
-        self.model_name = os.getenv("DEFAULT_MODEL", "deepseek-ai/DeepSeek-V3.2:novita")
+        self.model_name = os.getenv("DEFAULT_MODEL", "deepseek-ai/DeepSeek-V3.2-Exp:novita")
         
         if not self.api_token:
             raise ValueError("Error: Please configure HF_TOKEN in .env file")

@@ -32,5 +32,16 @@ def exact_match_scorer(prediction, ground_truth):
                 # Fallback to string comparison
                 if extracted_answer and str(extracted_answer) == str(ground_truth):
                     return True
-    
+                    
+    # Fallback: Find all numbers and check the last one
+    # This matches integers and floats
+    all_numbers = re.findall(r'-?\d+(?:\.\d+)?', prediction)
+    if all_numbers:
+        last_number = all_numbers[-1]
+        try:
+            if float(last_number) == float(ground_truth):
+                return True
+        except (ValueError, TypeError):
+            pass
+            
     return False
