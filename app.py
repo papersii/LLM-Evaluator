@@ -4,6 +4,11 @@ import json
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+try:
+    from wordcloud import WordCloud
+except ImportError:
+    WordCloud = None
+
 from src.model_client import LLMClient
 from src.scorer import exact_match_scorer
 
@@ -52,7 +57,8 @@ async def evaluate_item(client, item, sem):
             return {
                 "id": item.get('id', 'unknown'),
                 "error": str(e),
-                "is_correct": False
+                "is_correct": False,
+                "response": ""
             }
 
 async def run_evaluation(items):
@@ -117,6 +123,48 @@ def plot_radar_chart(df):
     
     st.pyplot(fig)
 
+def plot_length_distribution(df):
+    ft_size = 12
+    # Calculate lengths (safely handle non-string values)
+    df['length'] = df['response'].astype(str).apply(len)
+    
+    correct_lengths = df[df['is_correct']]['length']
+    incorrect_lengths = df[~df['is_correct']]['length']
+    
+    fig, ax = plt.subplots(figsize=(10, 6))
+    
+    # Histogram
+    ax.hist(correct_lengths, bins=20, alpha=0.7, label='Correct', color='green', edgecolor='black')
+    ax.hist(incorrect_lengths, bins=20, alpha=0.7, label='Incorrect', color='red', edgecolor='black')
+    
+    ax.set_title('Response Length Distribution', fontsize=ft_size)
+    ax.set_xlabel('Response Length (chars)', fontsize=ft_size)
+    ax.set_ylabel('Count', fontsize=ft_size)
+    ax.legend()
+    
+    st.pyplot(fig)
+
+def plot_error_wordcloud(df):
+    if WordCloud is None:
+        st.warning("WordCloud library not installed. Please install 'wordcloud'.")
+        return
+
+    error_df = df[~df['is_correct']]
+    
+    if len(error_df) == 0:
+        st.info("No incorrect answers to analyze!")
+        return
+        
+    text = " ".join(error_df['response'].astype(str))
+    
+    wordcloud = WordCloud(width=800, height=400, background_color='white').generate(text)
+    
+    fig, ax = plt.subplots(figsize=(10, 5))
+    ax.imshow(wordcloud, interpolation='bilinear')
+    ax.axis('off')
+    
+    st.pyplot(fig)
+
 # File Uploader
 uploaded_file = st.file_uploader("Choose a JSONL file", type="jsonl")
 
@@ -158,4 +206,39 @@ if uploaded_file is not None:
                 
             except Exception as e:
                 st.error(f"An error occurred: {e}")
+
+            # Export Results
+            st.divider()
+            st.subheader("📥 Export Results")
+            col1, col2 = st.columns(2)
+            
+            # CSV Export
+            csv_data = df.to_csv(index=False).encode('utf-8')
+            col1.download_button(
+                label="Download as CSV",
+                data=csv_data,
+                file_name="evaluation_results.csv",
+                mime="text/csv",
+            )
+            
+            # JSONL Export
+            jsonl_data = df.to_json(orient="records", lines=True).encode('utf-8')
+            col2.download_button(
+                label="Download as JSONL",
+                data=jsonl_data,
+                file_name="evaluation_results.jsonl",
+                mime="application/json",
+            )
+            
+            # Advanced Visualization
+            st.divider()
+            st.subheader("🔬 Advanced Analysis")
+            
+            tab1, tab2 = st.tabs(["Response Length", "Error Patterns (WordCloud)"])
+            
+            with tab1:
+                plot_length_distribution(df)
+                
+            with tab2:
+                plot_error_wordcloud(df)
 

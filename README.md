@@ -149,6 +149,8 @@ The scorer automatically extracts answers from:
 
 - **LaTeX**: `\boxed{42}`
 - **GSM8K**: `#### 42`
+- **Bold Numbers**: `**42**`
+- **Sentence Pattern**: `"The answer is 42"` or `"is 42"`
 - **Natural Language**: `"The answer is: 42"`
 - **Chinese**: `"答案是：42"`
 - **Plain Numbers**: Last number in the response
@@ -324,6 +326,8 @@ is_correct = exact_match_scorer(response, "4")
 
 - **LaTeX 格式**：`\boxed{42}`
 - **GSM8K 格式**：`#### 42`
+- **加粗数字**：`**42**`
+- **句式匹配**：`"is 42"` 或 `"The answer is 42"`
 - **自然语言**：`"The answer is: 42"`
 - **中文格式**：`"答案是：42"`
 - **纯数字**：回复中的最后一个数字

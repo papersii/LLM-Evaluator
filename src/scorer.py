@@ -11,6 +11,8 @@ def exact_match_scorer(prediction, ground_truth):
     # Try multiple patterns in priority order
     patterns = [
         r'\\boxed\{([^}]+)\}',              # LaTeX: \boxed{7}
+        r'\*\*(\d+(?:\.\d+)?)\*\*',         # Bold: **10**
+        r'(?:^|\s)is\s+(\d+(?:\.\d+)?)',    # "is 12" (e.g., "The answer is 12")
         r'#### ([^\n]+)',                   # GSM8K format: #### 42
         r'The answer is[:\s]+([^\n]+)',     # "The answer is: 7"
         r'Answer[:\s]+([^\n]+)',            # "Answer: 7"
