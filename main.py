@@ -67,13 +67,26 @@ def visualize_results(results, detailed_data, save_path=None):
 async def main():
     parser = argparse.ArgumentParser(description="LLM Evaluation Pipeline")
     parser.add_argument("--data_path", type=str, default="data/test_cases.jsonl")
-    parser.add_argument("--visualize", action="store_true", 
-                        help="Display visualization charts interactively")
+    parser.add_argument("--visualize", action="store_true", help="Display visualization charts interactively")
     parser.add_argument("--save-viz", type=str, default=None,
                         help="Save visualization to specified file path (e.g., results.png)")
+    parser.add_argument("--neural-scorer", action="store_true", help="Use trained Neural Scorer model")
+    parser.add_argument("--scorer-model", type=str, default="neural_scorer_model", help="Path to trained scorer model")
     args = parser.parse_args()
 
     client = LLMClient()
+    
+    # Initialize scorer
+    neural_scorer_model = None
+    if args.neural_scorer:
+        try:
+            from src.neural_scorer import NeuralScorer
+            print(f"Loading Neural Scorer from {args.scorer_model}...")
+            neural_scorer_model = NeuralScorer(model_name=args.scorer_model)
+        except Exception as e:
+            print(f"Failed to load Neural Scorer: {e}")
+            print("Falling back to Exact Match Scorer.")
+
     results = []
     detailed_data = []
 
@@ -95,11 +108,23 @@ async def main():
     async def evaluate_item(item):
         async with sem:
             print(f"Evaluating ID {item['id']}...")
-            response = await client.get_response(item['question'])
-            
-            # Score the response
-            is_correct = exact_match_scorer(response, item['answer'])
-            return is_correct, item
+            try:
+                response = await client.get_response(item['question'])
+                
+                # Score the response
+                if neural_scorer_model:
+                     # Neural Scorer
+                    is_correct, conf = neural_scorer_model.predict(item['question'], item['answer'], response)
+                    # We might want to store confidence too, but for now just bool
+                else:
+                    # Default Exact Match
+                    extracted = client.extract_final_answer(response) 
+                    is_correct = exact_match_scorer(extracted, item['answer'])
+                
+                return is_correct, item
+            except Exception as e:
+                print(f"Error evaluating ID {item['id']}: {e}")
+                return False, item
 
     print(f"Starting concurrent evaluation of {len(items)} items...")
     tasks = [evaluate_item(item) for item in items]

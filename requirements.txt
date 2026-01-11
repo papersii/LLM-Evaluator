@@ -3,3 +3,6 @@ python-dotenv>=1.0.0
 matplotlib>=3.7.0
 streamlit>=1.30.0
 wordcloud>=1.9.0
+torch
+transformers
+scikit-learn

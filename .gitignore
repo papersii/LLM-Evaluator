@@ -11,3 +11,5 @@ venv/
 
 # 忽略评测产生的本地结果文件
 results/
+neural_scorer_model/
+.venv/

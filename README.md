@@ -143,6 +143,19 @@ response = client.get_response("What is 2 + 2?")
 is_correct = exact_match_scorer(response, "4")
 ```
 
+### 🧠 Neural Scorer (New!)
+
+Evaluate semantic correctness using a trained BERT model instead of specific patterns.
+
+1. **Train the Scorer**:
+   ```bash
+   python train_scorer.py
+   ```
+2. **Run Evaluation**:
+   ```bash
+   python main.py --neural-scorer --scorer-model neural_scorer_model
+   ```
+
 ### 📊 Supported Answer Formats
 
 The scorer automatically extracts answers from:
@@ -319,6 +332,19 @@ client = LLMClient()
 response = client.get_response("What is 2 + 2?")
 is_correct = exact_match_scorer(response, "4")
 ```
+
+### 🧠 神经网络评分器 (新功能!)
+
+使用训练好的 BERT 模型进行语义正确性评估，替代传统的正则匹配。
+
+1. **训练评分器**:
+   ```bash
+   python train_scorer.py
+   ```
+2. **运行评测**:
+   ```bash
+   python main.py --neural-scorer --scorer-model neural_scorer_model
+   ```
 
 ### 📊 支持的答案格式
 
