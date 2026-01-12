@@ -1,31 +1,89 @@
 import streamlit as st
 import asyncio
 import json
-import matplotlib.pyplot as plt
-import numpy as np
 import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+import os
+
 try:
     from wordcloud import WordCloud
+    import matplotlib.pyplot as plt # Keep matplotlib for wordcloud
 except ImportError:
     WordCloud = None
+    plt = None
 
 from src.model_client import LLMClient
 from src.scorer import exact_match_scorer
+from src.neural_scorer import NeuralScorer
 
 # Set page config
 st.set_page_config(
     page_title="LLM Evaluator Dashboard",
     page_icon="📊",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
+
+# Custom CSS for better aesthetics
+st.markdown("""
+<style>
+    .stMetric {
+        background-color: #f0f2f6;
+        padding: 15px;
+        border-radius: 10px;
+        box-shadow: 2px 2px 5px rgba(0,0,0,0.05);
+    }
+    .stMetric label {
+        color: #666;
+    }
+    h1, h2, h3 {
+        color: #0e1117;
+    }
+</style>
+""", unsafe_allow_html=True)
 
 st.title("📊 LLM Evaluator Dashboard")
 st.markdown("Upload a test dataset (JSONL) to evaluate your LLM model and visualize the results.")
 
-# Initialize client
+# --- Sidebar ---
+st.sidebar.header("⚙️ Evaluation Settings")
+
+# Scorer Selection
+scorer_type = st.sidebar.radio(
+    "Select Scorer",
+    options=["Exact Match", "Neural Scorer"],
+    help="Exact Match: Strict string comparison.\nNeural Scorer: AI-based semantic evaluation (requires trained model)."
+)
+
+# Initialize Resources
 @st.cache_resource
 def get_client():
     return LLMClient()
+
+@st.cache_resource
+def get_neural_scorer():
+    model_path = 'neural_scorer_model'
+    if os.path.exists(model_path):
+        try:
+            return NeuralScorer(model_name=model_path)
+        except Exception as e:
+            st.error(f"Failed to load Neural Scorer: {e}")
+            return None
+    else:
+        return None
+
+# Check Neural Scorer Availability
+neural_scorer = None
+if scorer_type == "Neural Scorer":
+    neural_scorer = get_neural_scorer()
+    if neural_scorer is None:
+        st.sidebar.warning("⚠️ Neural Scorer model not found in 'neural_scorer_model/'. Falling back to Exact Match.")
+        scorer_type = "Exact Match"
+    else:
+        st.sidebar.success("✅ Neural Scorer Loaded")
+
+# --- Helper Functions ---
 
 def infer_category(question):
     question = question.lower()
@@ -40,32 +98,49 @@ def infer_category(question):
     else:
         return 'Arithmetic'
 
-async def evaluate_item(client, item, sem):
+async def evaluate_item(client, item, sem, scorer_type, neural_scorer_instance):
     async with sem:
         try:
             response = await client.get_response(item['question'])
-            is_correct = exact_match_scorer(response, item['answer'])
+            
+            is_correct = False
+            confidence = 1.0
+            
+            if scorer_type == "Neural Scorer" and neural_scorer_instance:
+                # Returns (is_correct, confidence)
+                is_correct, confidence = neural_scorer_instance.predict(
+                    item['question'], item['answer'], response
+                )
+            else:
+                # Exact Match
+                is_correct = exact_match_scorer(response, item['answer'])
+                confidence = 1.0 if is_correct else 0.0
+
             return {
                 "id": item.get('id', 'unknown'),
                 "category": item.get('category', infer_category(item['question'])),
                 "question": item['question'],
                 "answer": item['answer'],
                 "response": response,
-                "is_correct": is_correct
+                "is_correct": is_correct,
+                "confidence": confidence,
+                "scorer": scorer_type
             }
         except Exception as e:
             return {
                 "id": item.get('id', 'unknown'),
                 "error": str(e),
                 "is_correct": False,
-                "response": ""
+                "response": "",
+                "confidence": 0.0,
+                "scorer": scorer_type
             }
 
-async def run_evaluation(items):
+async def run_evaluation(items, scorer_type_selected, neural_scorer_obj):
     client = get_client()
     sem = asyncio.Semaphore(20) # Rate limit
     
-    tasks = [evaluate_item(client, item, sem) for item in items]
+    tasks = [evaluate_item(client, item, sem, scorer_type_selected, neural_scorer_obj) for item in items]
     
     # Progress bar
     progress_bar = st.progress(0)
@@ -82,71 +157,62 @@ async def run_evaluation(items):
         
     return results
 
+# --- Plotting Functions (Plotly) ---
+
 def plot_radar_chart(df):
     # Group by category
-    categories = df['category'].unique()
+    cat_accuracy = df.groupby('category')['is_correct'].mean().reset_index()
+    cat_accuracy.columns = ['category', 'accuracy']
     
-    # Calculate accuracy per category
-    cat_accuracy = df.groupby('category')['is_correct'].mean()
-    
-    # If less than 3 categories, add dummy ones for a proper polygon
-    labels = list(cat_accuracy.index)
-    values = list(cat_accuracy.values)
-    
-    if len(labels) < 3:
-        # Create a "pseudo-radar" or just warn
-        # For better visuals, let's force a triangle if needed or just handle it
-        pass
-        
-    # Number of variables
-    N = len(labels)
-    
-    # Compute angle for each axis
-    angles = [n / float(N) * 2 * np.pi for n in range(N)]
-    angles += angles[:1] # Close the circle
-    
-    values += values[:1] # Close the circle
-    
-    fig, ax = plt.subplots(figsize=(6, 6), subplot_kw=dict(polar=True))
-    
-    # Draw one axe per variable + add labels
-    plt.xticks(angles[:-1], labels)
-    
-    # Draw ylabels
-    ax.set_rlabel_position(0)
-    plt.yticks([0.25, 0.5, 0.75, 1.0], ["0.25", "0.5", "0.75", "1.0"], color="grey", size=7)
-    plt.ylim(0, 1)
-    
-    # Plot data
-    ax.plot(angles, values, linewidth=1, linestyle='solid')
-    ax.fill(angles, values, 'b', alpha=0.1)
-    
-    st.pyplot(fig)
+    fig = px.line_polar(
+        cat_accuracy,
+        r='accuracy',
+        theta='category',
+        line_close=True,
+        range_r=[0, 1],
+        title='Accuracy by Category',
+        markers=True,
+        template="plotly_white"
+    )
+    fig.update_traces(fill='toself', line_color='#4C78A8')
+    st.plotly_chart(fig, use_container_width=True)
 
 def plot_length_distribution(df):
-    ft_size = 12
-    # Calculate lengths (safely handle non-string values)
-    df['length'] = df['response'].astype(str).apply(len)
+    df['length'] = df['response'].astype(str).apply(len) if 'response' in df else 0
+    df['Status'] = df['is_correct'].apply(lambda x: 'Correct' if x else 'Incorrect')
     
-    correct_lengths = df[df['is_correct']]['length']
-    incorrect_lengths = df[~df['is_correct']]['length']
-    
-    fig, ax = plt.subplots(figsize=(10, 6))
-    
-    # Histogram
-    ax.hist(correct_lengths, bins=20, alpha=0.7, label='Correct', color='green', edgecolor='black')
-    ax.hist(incorrect_lengths, bins=20, alpha=0.7, label='Incorrect', color='red', edgecolor='black')
-    
-    ax.set_title('Response Length Distribution', fontsize=ft_size)
-    ax.set_xlabel('Response Length (chars)', fontsize=ft_size)
-    ax.set_ylabel('Count', fontsize=ft_size)
-    ax.legend()
-    
-    st.pyplot(fig)
+    fig = px.histogram(
+        df, 
+        x='length', 
+        color='Status',
+        nbins=20,
+        title='Response Length Distribution',
+        color_discrete_map={'Correct': '#00CC96', 'Incorrect': '#EF553B'},
+        opacity=0.7,
+        template="plotly_white",
+        labels={'length': 'Response Length (chars)'}
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+def plot_confidence_distribution(df):
+    if 'confidence' not in df.columns:
+        return
+        
+    fig = px.histogram(
+        df,
+        x='confidence',
+        color='is_correct',
+        nbins=20,
+        title='Confidence Score Distribution',
+        labels={'confidence': 'Confidence Score'},
+        template="plotly_white",
+         color_discrete_map={True: '#00CC96', False: '#EF553B'}
+    )
+    st.plotly_chart(fig, use_container_width=True)
 
 def plot_error_wordcloud(df):
     if WordCloud is None:
-        st.warning("WordCloud library not installed. Please install 'wordcloud'.")
+        st.warning("WordCloud library not installed.")
         return
 
     error_df = df[~df['is_correct']]
@@ -159,13 +225,15 @@ def plot_error_wordcloud(df):
     
     wordcloud = WordCloud(width=800, height=400, background_color='white').generate(text)
     
+    # Use matplotlib for wordcloud as it renders an image
     fig, ax = plt.subplots(figsize=(10, 5))
     ax.imshow(wordcloud, interpolation='bilinear')
     ax.axis('off')
     
     st.pyplot(fig)
 
-# File Uploader
+# --- Main App ---
+
 uploaded_file = st.file_uploader("Choose a JSONL file", type="jsonl")
 
 if uploaded_file is not None:
@@ -175,70 +243,84 @@ if uploaded_file is not None:
     
     st.info(f"Loaded {len(items)} test cases.")
     
-    if st.button("Start Evaluation"):
+    if st.button("Start Evaluation", type="primary"):
         with st.spinner("Evaluating..."):
             # Run async evaluation
             try:
-                results = asyncio.run(run_evaluation(items))
+                results = asyncio.run(run_evaluation(items, scorer_type, neural_scorer))
                 
                 # Process results
                 df = pd.DataFrame(results)
+                
+                # Handle boolean conversion for proper display
+                df['is_correct'] = df['is_correct'].astype(bool)
+                
                 accuracy = df['is_correct'].mean()
                 
-                st.success(f"Evaluation Complete! Final Accuracy: {accuracy:.2%}")
+                st.success("Evaluation Complete!")
                 
-                # Metrics
+                # --- Metrics Section ---
                 col1, col2, col3 = st.columns(3)
                 col1.metric("Total Questions", len(df))
-                col2.metric("Correct Answers", df['is_correct'].sum())
+                col2.metric("Correct Answers", int(df['is_correct'].sum()))
                 col3.metric("Accuracy", f"{accuracy:.2%}")
                 
-                # Visualization
-                st.subheader("Radar Chart Analysis")
-                if 'category' in df.columns and df['category'].nunique() >= 1:
-                     plot_radar_chart(df)
-                else:
-                    st.warning("Not enough categories for Radar Chart.")
+                st.divider()
+
+                # --- Visualization Tabs ---
+                tab1, tab2, tab3 = st.tabs(["📊 Overview", "🔬 Detailed Analysis", "💾 Raw Data"])
                 
-                # Detailed Data
-                st.subheader("Detailed Results")
-                st.dataframe(df)
+                with tab1:
+                    col_a, col_b = st.columns(2)
+                    with col_a:
+                        if 'category' in df.columns and df['category'].nunique() >= 1:
+                            plot_radar_chart(df)
+                        else:
+                            st.warning("Not enough categories for Radar Chart.")
+                    with col_b:
+                        # Pie chart for overall accuracy
+                        fig_pie = px.pie(
+                            names=['Correct', 'Incorrect'],
+                            values=[df['is_correct'].sum(), (~df['is_correct']).sum()],
+                            title="Overall Accuracy",
+                            color_discrete_sequence=['#00CC96', '#EF553B'],
+                            hole=0.4
+                        )
+                        st.plotly_chart(fig_pie, use_container_width=True)
+                
+                with tab2:
+                    col_c, col_d = st.columns(2)
+                    with col_c:
+                         plot_length_distribution(df)
+                    with col_d:
+                        plot_error_wordcloud(df)
+                    
+                    if scorer_type == "Neural Scorer":
+                         plot_confidence_distribution(df)
+
+                with tab3:
+                    st.dataframe(df, use_container_width=True)
+                    
+                    # Export Buttons
+                    col_exp1, col_exp2 = st.columns(2)
+                    csv_data = df.to_csv(index=False).encode('utf-8')
+                    col_exp1.download_button(
+                        label="Download CSV",
+                        data=csv_data,
+                        file_name="evaluation_results.csv",
+                        mime="text/csv",
+                    )
+                    
+                    jsonl_data = df.to_json(orient="records", lines=True).encode('utf-8')
+                    col_exp2.download_button(
+                        label="Download JSONL",
+                        data=jsonl_data,
+                        file_name="evaluation_results.jsonl",
+                        mime="application/json",
+                    )
                 
             except Exception as e:
                 st.error(f"An error occurred: {e}")
-
-            # Export Results
-            st.divider()
-            st.subheader("📥 Export Results")
-            col1, col2 = st.columns(2)
-            
-            # CSV Export
-            csv_data = df.to_csv(index=False).encode('utf-8')
-            col1.download_button(
-                label="Download as CSV",
-                data=csv_data,
-                file_name="evaluation_results.csv",
-                mime="text/csv",
-            )
-            
-            # JSONL Export
-            jsonl_data = df.to_json(orient="records", lines=True).encode('utf-8')
-            col2.download_button(
-                label="Download as JSONL",
-                data=jsonl_data,
-                file_name="evaluation_results.jsonl",
-                mime="application/json",
-            )
-            
-            # Advanced Visualization
-            st.divider()
-            st.subheader("🔬 Advanced Analysis")
-            
-            tab1, tab2 = st.tabs(["Response Length", "Error Patterns (WordCloud)"])
-            
-            with tab1:
-                plot_length_distribution(df)
-                
-            with tab2:
-                plot_error_wordcloud(df)
-
+                # Print proper stack trace in logs if needed, but for UI just show error
+                import traceback
+                st.text(traceback.format_exc())
